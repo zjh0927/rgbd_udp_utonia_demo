@@ -1,0 +1,27 @@
+rgbd_udp_receiver:
+  ros__parameters:
+    bind_address: 0.0.0.0
+    h265_port: 5000
+    zdepth_port: 5001
+    calibration_port: 5002
+    expected_source_id: 1
+    reassembly_timeout_ms: 100
+    pair_timeout_ms: 100
+    timestamp_tolerance_ms: 10
+    socket_timeout_ms: 100
+    max_datagram_bytes: 1200
+    max_frame_bytes: 16777216
+    max_fragments: 4096
+    max_inflight_frames: 64
+    max_inflight_bytes: 67108864
+    socket_receive_buffer_bytes: 8388608
+    max_pair_slots: 64
+    max_h265_pending_metadata: 32
+    max_calibration_generations: 4
+    max_output_points: 50000
+    expected_width: 640
+    expected_height: 480
+    max_depth_mm: 8190
+    output_topic: /rgbd/color_points
+    output_frame_override: ""
+    metrics_interval_ms: 1000

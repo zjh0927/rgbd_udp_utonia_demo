@@ -1,0 +1,41 @@
+# colcon / CMake generated files
+/build/
+/install/
+/log/
+/build_*/
+/install_*/
+/log_*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+symlink_install_manifest.txt
+Makefile
+*.o
+*.a
+*.so
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Models and generated PCA profiles
+*.pth
+*.pt
+*.onnx
+*.npz
+
+# Runtime output and local archives
+*.log
+*.bag
+*.db3
+*.zip
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+

@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>utonia_pca_inference</name>
+  <version>0.1.0</version>
+  <description>Latest-frame Utonia Tiny inference and fixed-PCA point-cloud visualization.</description>
+  <maintainer email="zjh@pc.local">zjh</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

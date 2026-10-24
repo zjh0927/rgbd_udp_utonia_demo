@@ -1,0 +1,19 @@
+utonia_pca_inference:
+  ros__parameters:
+    input_topic: /rgbd/color_points
+    output_topic: /utonia/pca_points
+    output_frame_id: ""
+    utonia_model: utonia_tiny
+    utonia_source_path: "~/utonia_ws/Utonia"
+    checkpoint_path: "~/utonia_ws/Utonia/ckpt/utonia_tiny.pth"
+    utonia_scale: 0.5
+    max_model_points: 50000
+    min_model_points: 256
+    oom_min_points: 4096
+    oom_max_consecutive: 3
+    warmup_points: 4096
+    random_seed: 37
+    pca_profile_path: "~/utonia_ws/Utonia/ckpt/utonia_tiny_pca_profile.npz"
+    pca_calibration_frames: 20
+    pca_max_samples: 65536
+    metrics_interval_ms: 1000

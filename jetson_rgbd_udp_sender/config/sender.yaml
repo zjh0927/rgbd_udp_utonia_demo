@@ -1,0 +1,26 @@
+rgbd_udp_sender:
+  ros__parameters:
+    rgb_topic: /camera/camera/color/image_raw
+    depth_topic: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera/color/camera_info
+
+    receiver_ip: 192.168.1.107
+    h265_port: 5000
+    depth_port: 5001
+    calibration_port: 5002
+    source_id: 1
+
+    expected_width: 640
+    expected_height: 480
+    sync_slop_ms: 10
+    input_timeout_ms: 2000
+    depth_scale_m: 0.001
+
+    h265_bitrate: 3000000
+    h265_gop: 10
+    h265_fps: 30
+
+    udp_datagram_bytes: 1200
+    socket_send_buffer_bytes: 4194304 # 4 MiB
+    max_frame_bytes: 16777216 # 16 MiB
+    calibration_period_ms: 1000
