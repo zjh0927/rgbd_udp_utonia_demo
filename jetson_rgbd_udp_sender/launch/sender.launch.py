@@ -20,11 +20,6 @@ def generate_launch_description():
                 default_value=default_config,
                 description="Sender parameter YAML file",
             ),
-            DeclareLaunchArgument(
-                "receiver_ip",
-                default_value="192.168.1.107",
-                description="Computer IP on the Mesh network",
-            ),
             Node(
                 package="jetson_rgbd_udp_sender",
                 executable="rgbd_udp_sender",
@@ -33,7 +28,6 @@ def generate_launch_description():
                 emulate_tty=True,
                 parameters=[
                     LaunchConfiguration("config_file"),
-                    {"receiver_ip": LaunchConfiguration("receiver_ip")},
                 ],
             ),
         ]

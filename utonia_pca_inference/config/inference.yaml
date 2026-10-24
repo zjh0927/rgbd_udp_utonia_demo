@@ -7,7 +7,7 @@ utonia_pca_inference:
     utonia_source_path: "~/utonia_ws/Utonia"
     checkpoint_path: "~/utonia_ws/Utonia/ckpt/utonia_tiny.pth"
     utonia_scale: 0.5
-    max_model_points: 50000
+    max_model_points: 20000
     min_model_points: 256
     oom_min_points: 4096
     oom_max_consecutive: 3

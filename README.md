@@ -30,9 +30,6 @@ utonia_pca_inference/   PC Utonia Tiny 推理、固定 PCA 和 ROS 2 发布
 docs/                   系统设计
 ```
 
-`build/`、`install/` 和 `log/` 是本机构建产物，已由 `.gitignore` 排除，不能上传
-Git。模型权重和 PCA profile 也不上传。
-
 ## 2. 已验证环境
 
 ### Jetson
@@ -53,7 +50,34 @@ Git。模型权重和 PCA profile 也不上传。
   torchvision 0.20.0+cu124、torch-scatter 2.1.2+pt25cu124、spconv-cu124
 - Utonia Tiny，FlashAttention 关闭
 
-## 3. 依赖检查脚本
+## 3. 安装 ROS 2 Humble
+
+Jetson 和 PC 都使用 Ubuntu 22.04，可通过小鱼一键安装工具安装 ROS 2：
+
+```bash
+sudo apt update
+sudo apt install -y wget
+source <(wget -qO- https://fishros.com/install)
+```
+
+在交互菜单中选择“一键安装 ROS”，安装 ROS 2 Humble。Jetson 可选择基础版，PC
+需要运行 RViz2，应选择桌面版。安装完成后，两台设备都安装开发工具：
+
+```bash
+sudo apt update
+sudo apt install -y ros-dev-tools
+```
+
+安装后在每个新终端加载 ROS 2：
+
+```bash
+source /opt/ros/humble/setup.bash
+```
+
+安装工具主页：<https://fishros.com/page/>；源码：
+<https://github.com/fishros/install>。
+
+### 3.1 依赖检查脚本
 
 三个脚本都只读取环境，不会自动安装或修改系统：
 
@@ -69,24 +93,43 @@ utonia_pca_inference/scripts/check_utonia_deps.sh
 
 本节只在 Jetson 上执行。不要在 x86 PC 上构建发送端。
 
-### 4.1 安装 ROS 2 和编译依赖
+### 4.1 安装 RealSense、GStreamer 和编译依赖
 
-系统需要已有 ROS 2 Humble 和 RealSense ROS 2 包。发送端的普通开发依赖为：
+安装 RealSense SDK 的 ROS 二进制包及 ROS 2 相机驱动：
+
+```bash
+sudo apt update
+sudo apt install -y \
+  ros-humble-librealsense2 \
+  ros-humble-realsense2-camera \
+  ros-humble-realsense2-description
+```
+
+RealSense 官方要求 SDK 与 ROS Wrapper 只选择一种安装来源，避免同时安装源码版和
+二进制版造成冲突。本项目使用上面的 ROS 软件源二进制包。官方说明：
+<https://github.com/realsenseai/realsense-ros#installation-on-ubuntu>。
+
+安装 NVIDIA 硬件编码组件、GStreamer 运行库及发送端编译依赖：
 
 ```bash
 sudo apt update
 sudo apt install -y \
   build-essential cmake git pkg-config \
-  gstreamer1.0-tools \
+  gstreamer1.0-tools gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-  nlohmann-json3-dev zlib1g-dev \
-  ros-humble-rclcpp ros-humble-sensor-msgs ros-humble-message-filters
+  nvidia-l4t-gstreamer nlohmann-json3-dev zlib1g-dev \
+  ros-humble-ament-cmake ros-humble-rclcpp \
+  ros-humble-sensor-msgs ros-humble-message-filters \
+  ros-humble-ros2launch ros-humble-launch-ros \
+  ros-humble-ament-index-python
 ```
 
-`nvvidconv` 和 `nvv4l2h265enc` 来自 Jetson BSP 多媒体组件；不要为了本项目盲目
-升级 L4T、刷机或安装整个 JetPack 元包。
+`nvvidconv` 和 `nvv4l2h265enc` 由与当前 L4T 版本匹配的
+`nvidia-l4t-gstreamer` 提供。不要混装其他 JetPack/L4T 版本的软件源。NVIDIA
+安装说明：<https://docs.nvidia.com/jetson/archives/r36.4.4/DeveloperGuide/SD/Multimedia/AcceleratedGstreamer.html>。
 
-Zdepth 源码已经包含在包内，构建过程不访问网络。
+Zdepth 及其使用的 Zstd 源码已经包含在包内，不需要另外安装。
 
 ### 4.2 复制和检查
 
@@ -141,22 +184,36 @@ ros2 launch jetson_rgbd_udp_sender sender.launch.py \
 PC 上构建 `rgbd_udp_receiver` 和 `utonia_pca_inference` 时必须先退出 Conda，
 确保 CMake 使用 ROS 2 Humble 对应的 `/usr/bin/python3`。
 
-### 5.1 系统依赖
+### 5.1 NVIDIA 驱动和系统依赖
+
+PC 需要可正常驱动 RTX 显卡。若 `nvidia-smi` 还不能运行，可使用 Ubuntu 推荐的
+专有驱动；安装完成后重启：
+
+```bash
+sudo apt update
+sudo apt install -y ubuntu-drivers-common
+sudo ubuntu-drivers install
+sudo reboot
+```
+
+重启后先确认 `nvidia-smi` 能识别显卡，再安装编译和 ROS 2 Python 依赖：
 
 ```bash
 sudo apt update
 sudo apt install -y \
-  build-essential cmake git \
+  build-essential cmake git wget \
   python3-dev python3-numpy python3-pip pybind11-dev \
   python3-colcon-common-extensions \
   ros-humble-ament-cmake ros-humble-ament-cmake-python \
-  ros-humble-rclpy ros-humble-sensor-msgs
+  ros-humble-rclpy ros-humble-sensor-msgs \
+  ros-humble-std-msgs ros-humble-builtin-interfaces \
+  ros-humble-launch-ros
 ```
 
-确认 PyAV；缺失时再安装：
+接收端使用系统 Python 运行，单独为 `/usr/bin/python3` 安装 PyAV：
 
 ```bash
-/usr/bin/python3 -m pip install av==16.0.1
+/usr/bin/python3 -m pip install --user av==16.0.1
 ```
 
 检查：
@@ -195,7 +252,8 @@ source install/setup.bash
 
 ## 6. Utonia 环境和权重
 
-Utonia 源码与权重不在本仓库中。下面是已验证组合：
+Utonia 源码与权重不在本仓库中。使用已有的 Conda 创建独立推理环境，并安装本项目
+实际使用的 Utonia 依赖：
 
 ```bash
 conda create -n utonia python=3.10 -y
@@ -212,6 +270,10 @@ python -m pip install --no-index torch-scatter \
   -f https://data.pyg.org/whl/torch-2.5.0+cu124.html
 ```
 
+这里使用 PyTorch 自带的 CUDA 12.4 运行库，不要求另外安装完整 CUDA Toolkit，
+但 NVIDIA 驱动必须可用。本项目关闭 FlashAttention，因此无需安装 `flash-attn`；
+Open3D、Gradio 等仅用于 Utonia 官方 Demo 的包也不是本项目依赖。
+
 准备固定版本 Utonia：
 
 ```bash
@@ -224,32 +286,32 @@ wget -c -O ~/utonia_ws/Utonia/ckpt/utonia_tiny.pth \
   https://huggingface.co/Pointcept/Utonia/resolve/main/utonia_tiny.pth
 ```
 
+Utonia 官方安装说明：<https://github.com/Pointcept/Utonia#installation>。
+
 若源码或权重放在其他位置，修改
 `utonia_pca_inference/config/inference.yaml` 中的路径。
 
-检查 Conda 推理环境：
+在已加载 ROS 2 工作区的 `utonia` 环境中检查推理依赖：
 
 ```bash
-conda activate utonia
-unset LD_LIBRARY_PATH PYTHONPATH PYTHONHOME
-export PYTHONNOUSERSITE=1
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-export PYTHONPATH="$HOME/utonia_ws/Utonia:${PYTHONPATH:-}"
-
 bash utonia_pca_inference/scripts/check_utonia_deps.sh
 ```
 
 ## 7. PC 端运行
 
+三个进程使用的环境如下。具体环境激活方式取决于本机的 ROS 2 和 Conda 安装，
+不需要照搬某台开发电脑的环境变量设置。每个终端启动前还需加载本工作区的
+`install/setup.bash`。
+
+| 进程 | 使用环境 |
+|---|---|
+| `rgbd_udp_receiver` | ROS 2 Humble 系统 Python 环境 |
+| `utonia_pca_inference` | 安装了 PyTorch 和 Utonia 依赖的 `utonia` Conda 环境，同时可访问 ROS 2 |
+| RViz2 | ROS 2 Humble 环境 |
+
 ### 终端 A：UDP 接收和点云重建
 
 ```bash
-conda deactivate 2>/dev/null || true
-hash -r
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
 ros2 launch rgbd_udp_receiver receiver.launch.py \
   bind_address:=0.0.0.0 \
   h265_port:=5000 \
@@ -266,13 +328,6 @@ ros2 topic hz /rgbd/color_points
 ### 终端 B：Utonia Tiny 和固定 PCA
 
 ```bash
-conda activate utonia
-unset LD_LIBRARY_PATH PYTHONPATH PYTHONHOME
-export PYTHONNOUSERSITE=1
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-export PYTHONPATH="$HOME/utonia_ws/Utonia:${PYTHONPATH:-}"
-
 ros2 launch utonia_pca_inference inference.launch.py
 ```
 
@@ -282,8 +337,6 @@ ros2 launch utonia_pca_inference inference.launch.py
 ### 终端 C：RViz2
 
 ```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
 rviz2
 ```
 
@@ -300,35 +353,37 @@ PCA 颜色表示预训练特征空间，不是带类别名称的语义分割结�
 
 ## 8. 已完成的实机验证
 
-下面是开发阶段使用 5 Mbps H.265 配置得到的结果；当前 3 Mbps 配置需要重新记录：
+实机环境为 Jetson Orin NX 16 GB、D435i、无线 Mesh 网络和 RTX 4060 Laptop。
+输入为 `640x480@30`，H.265 目标码率为 3 Mbps；接收端最多重建 50000 点，
+Utonia Tiny 最多输入 20000 点。接收端与推理端数据来自不同采样窗口，结果用于
+展示系统运行情况，不作为严格同步的端到端基准测试。
 
-| 环节 | 已观察结果 |
+| 环节 | 实测结果 |
 |---|---:|
-| Jetson RGB-D 同步 | 约 29～30 FPS |
-| H.265 | 约 5 Mbps |
-| Zdepth | 约 24～28 Mbps，编码约 15～16 ms/帧 |
-| `/rgbd/color_points` | 约 7～11 Hz，网络状态相关 |
-| Utonia Tiny | 约 36k～38k 点，约 5～6 Hz |
-| RViz2 | 已成功显示固定 PCA 伪彩色点云 |
+| Jetson RGB-D 同步 | 约 30 FPS |
+| H.265 硬件编码 | 目标码率 3 Mbps |
+| Zdepth 编码 | 约 24～28 Mbps，约 15～16 ms/帧 |
+| H.265 解码及 RGB24 转换 | 约 14.0 FPS |
+| Zdepth 解码 | 约 19.4 FPS |
+| 50000 点重建与发布 | 约 12.1 FPS |
+| Utonia Tiny 推理与 PCA 发布 | 全窗口约 4.1 FPS；输入连续时约 9～10 FPS |
+| RViz2 可视化 | 成功显示 `/utonia/pca_points` 伪彩色点云 |
 
-不要把原始编译日志提交到 Git。新的实测结果应写明硬件、参数、场景、采样时间和
-统计口径后，以表格形式更新本节。
+采样期间未出现 H.265/Zdepth 解码错误、CRC 错误、RGB-D 配对错误或 CUDA OOM。
+帧率波动主要来自无线 UDP 丢包与抖动、点云重建和 Utonia 推理开销；系统采用
+“只保留最新帧”策略丢弃来不及处理的旧帧，以优先保证实时可视化的低延迟。
+
+### 可改进方向
+
+- 使用有线网络进行对照测试，并进一步优化 UDP 缓冲、超时和丢包恢复策略。
+- 将点云重建数量统一为 20000 点，减少投影、PointCloud2 构造和 ROS 进程间传输开销。
+- 尝试 NVDEC 硬件解码、混合精度推理和 FlashAttention，进一步提高处理帧率。
 
 ## 9. 上传 Git 前检查
 
 本项目自有代码采用 MIT License，正文见 [LICENSE](LICENSE)。Zdepth 与 Utonia
 仍分别遵循各自的第三方许可证，详见
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-```bash
-find . -type d \( -name build -o -name install -o -name log -o -name __pycache__ \)
-find . -type f \( -name '*.pyc' -o -name '*.log' -o -name '*.pth' -o -name '*.npz' \)
-
-git init
-git status --ignored
-git add .
-git status
-```
 
 确认 `build/`、`install/`、`log/`、模型权重、PCA profile 和 Python 缓存均未进入
 暂存区后再提交。
