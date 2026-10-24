@@ -359,21 +359,16 @@ Utonia Tiny 最多输入 20000 点。接收端与推理端数据来自不同采�
 展示系统运行情况，不作为严格同步的端到端基准测试。
 表中的 FPS 表示各环节每秒处理或发布的帧数（吞吐量），不表示单帧耗时或端到端延迟。
 
-<table align="center">
-  <thead>
-    <tr><th align="left">环节</th><th align="left">实测结果</th></tr>
-  </thead>
-  <tbody>
-    <tr><td align="left">Jetson RGB-D 同步</td><td align="left">约 30 FPS</td></tr>
-    <tr><td align="left">H.265 硬件编码</td><td align="left">目标码率 3 Mbps</td></tr>
-    <tr><td align="left">Zdepth 编码</td><td align="left">约 24～28 Mbps，约 15～16 ms/帧</td></tr>
-    <tr><td align="left">H.265 解码及 RGB24 转换</td><td align="left">约 14.0 FPS</td></tr>
-    <tr><td align="left">Zdepth 解码</td><td align="left">约 19.4 FPS</td></tr>
-    <tr><td align="left">50000 点重建与发布</td><td align="left">约 12.1 FPS</td></tr>
-    <tr><td align="left">Utonia Tiny 推理与 PCA 发布</td><td align="left">全窗口约 4.1 FPS；输入连续时约 9～10 FPS</td></tr>
-    <tr><td align="left">RViz2 可视化</td><td align="left">成功显示 <code>/utonia/pca_points</code> 伪彩色点云</td></tr>
-  </tbody>
-</table>
+| 环节 | 实测结果 |
+|---|---|
+| Jetson RGB-D 同步 | 约 30 FPS |
+| H.265 硬件编码 | 目标码率 3 Mbps |
+| Zdepth 编码 | 约 24～28 Mbps，约 15～16 ms/帧 |
+| H.265 解码及 RGB24 转换 | 约 14.0 FPS |
+| Zdepth 解码 | 约 19.4 FPS |
+| 50000 点重建与发布 | 约 12.1 FPS |
+| Utonia Tiny 推理与 PCA 发布 | 全窗口约 4.1 FPS；输入连续时约 9～10 FPS |
+| RViz2 可视化 | 成功显示 `/utonia/pca_points` 伪彩色点云 |
 
 采样期间未出现 H.265/Zdepth 解码错误、CRC 错误、RGB-D 配对错误或 CUDA OOM。
 帧率波动主要来自无线 UDP 丢包与抖动、点云重建和 Utonia 推理开销；系统采用
