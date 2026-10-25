@@ -276,6 +276,13 @@ python -m pip install --no-index torch-scatter \
 这里使用 PyTorch 自带的 CUDA 12.4 运行库，不要求另外安装完整 CUDA Toolkit，
 但 NVIDIA 驱动必须可用。本项目关闭 FlashAttention，因此无需安装 `flash-attn`；
 Open3D、Gradio 等仅用于 Utonia 官方 Demo 的包也不是本项目依赖。
+如果需要 PC 本地图像弹窗，可在 `utonia` 环境额外安装带 GUI 的 OpenCV：
+
+```bash
+python -m pip install --no-deps opencv-python==4.11.0.86
+```
+
+本地弹窗不开启时不需要 OpenCV。不要安装 `opencv-python-headless` 作为窗口依赖。
 
 准备固定版本 Utonia：
 
@@ -322,8 +329,13 @@ ros2 launch utonia_pca_inference fused.launch.py \
   calibration_port:=5002
 ```
 
-需要在 PC 上同时查看接收到的 RGB 与深度图时，给上述命令加
-`preview_fps:=5`。默认 `preview_fps:=0` 不发布预览，以免影响吞吐量测量。
+需要直接在 PC 弹窗查看 RGB 与深度图时，给上述命令加 `gui_fps:=10`。
+窗口由主线程处理，ROS 回调和推理在后台运行；按 `q` 或 Esc 关闭窗口并停止程序。
+弹窗只读取最新配对帧，不构造中间 ROS 图像消息，日志中的 `gui fps/ms p95`
+记录实际显示帧率和画面转换、提交到窗口的耗时。默认 `gui_fps:=0` 不打开窗口。
+
+如需在 RViz2 中查看接收到的图像，也可以给命令加 `preview_fps:=5`。
+默认 `preview_fps:=0` 不发布图像话题，以免影响吞吐量测量。
 预览使用已经配对的 RGB-D 帧，只保留最新帧；可在 RViz2 添加 `Image` 显示：
 
 | 话题 | 格式 | 用途 |
@@ -332,8 +344,8 @@ ros2 launch utonia_pca_inference fused.launch.py \
 | `/rgbd/depth/image_raw` | `16UC1` | 原始毫米深度值 |
 | `/rgbd/depth/preview` | `mono8` | 便于查看的灰度深度图，近处亮、远处暗、无效值为黑色 |
 
-RViz2 图像显示使用 `Best Effort` 可靠性。预览会额外构造和发布图像消息，
-其耗时单独打印为 `preview ms p95`；评估推理帧率时建议关闭预览。
+RViz2 图像显示使用 `Best Effort` 可靠性。ROS 图像预览会额外构造和发布图像消息，
+其耗时单独打印为 `preview ms p95`；评估推理帧率时建议关闭图像预览和本地弹窗。
 
 第一次运行会收集 20 个成功推理帧拟合固定 PCA，然后保存 profile。后续启动会
 复用该 profile；模型哈希、特征维度或关键参数不匹配时会重新校准。

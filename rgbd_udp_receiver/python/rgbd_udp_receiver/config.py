@@ -29,6 +29,7 @@ class ReceiverConfig:
     output_topic: str = "/rgbd/color_points"
     output_frame_override: str = ""
     preview_fps: int = 0
+    gui_fps: int = 0
     metrics_interval_ms: int = 1000
 
     def validation_error(self) -> Optional[str]:
@@ -79,6 +80,8 @@ class ReceiverConfig:
             return "output_topic must be absolute"
         if not 0 <= self.preview_fps <= 30:
             return "preview_fps must be in [0, 30]"
+        if not 0 <= self.gui_fps <= 30:
+            return "gui_fps must be in [0, 30]"
         if not 100 <= self.metrics_interval_ms <= 60000:
             return "metrics_interval_ms must be in [100, 60000]"
         return None

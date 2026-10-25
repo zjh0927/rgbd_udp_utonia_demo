@@ -56,6 +56,7 @@ class ReceiverNode(Node):
         self._bundle_slot: LatestSlot[DecodedBundle] = LatestSlot()
         self._publish_slot: LatestSlot[tuple] = LatestSlot()
         self._preview_slot: LatestSlot[tuple] = LatestSlot()
+        self._gui_slot: LatestSlot[DecodedBundle] = LatestSlot()
         self._discontinuity_lock = threading.Lock()
         self._h265_discontinuity_epoch = 0
         self._state_lock = threading.Lock()
@@ -274,6 +275,12 @@ class ReceiverNode(Node):
                         self._metrics.increment("preview_overwrites")
                 except SlotClosed:
                     return
+            if self.config.gui_fps > 0:
+                try:
+                    if self._gui_slot.put(bundle):
+                        self._metrics.increment("gui_overwrites")
+                except SlotClosed:
+                    return
             projection_started = time.perf_counter_ns()
             try:
                 points = project_color_depth(
@@ -362,6 +369,14 @@ class ReceiverNode(Node):
         )
         self._metrics.increment("preview_published")
 
+    def take_latest_gui_bundle(self) -> Optional[DecodedBundle]:
+        taken = self._gui_slot.take_nowait()
+        return None if taken is None else taken.value
+
+    def record_gui_render(self, elapsed_ms: float) -> None:
+        self._metrics.observe_ms("gui_render", elapsed_ms)
+        self._metrics.increment("gui_rendered")
+
     def _report_metrics(self) -> None:
         now_ns = time.monotonic_ns()
         interval = max((now_ns - self._last_metrics_ns) / 1_000_000_000.0, 1e-6)
@@ -379,7 +394,8 @@ class ReceiverNode(Node):
             "points=%s | udp dgrams=%s/%s/%s invalid=%d crc=%d timeout=%d | "
             "overwrite h/d/b/p=%d/%d/%d/%d | errors decode_h/depth/direct=%d/%d/%d pair_mismatch=%d | "
             "ms p95 codec/rgb/depth/xyz/pack=%.1f/%.1f/%.1f/%.1f/%.1f | "
-            "preview fps=%.1f ms p95=%.1f errors=%d"
+            "preview fps=%.1f ms p95=%.1f errors=%d | "
+            "gui fps=%.1f ms p95=%.1f"
             % (
                 rate("h265_decoded"),
                 rate("zdepth_decoded"),
@@ -412,6 +428,8 @@ class ReceiverNode(Node):
                 rate("preview_published"),
                 values.get("preview_publish_p95_ms", 0.0),
                 values.get("preview_errors", 0),
+                rate("gui_rendered"),
+                values.get("gui_render_p95_ms", 0.0),
             )
         )
         self._last_counts = values
@@ -433,6 +451,7 @@ class ReceiverNode(Node):
             self._threads[2].join(timeout=3.0)
         self._publish_slot.close()
         self._preview_slot.close()
+        self._gui_slot.close()
         self._h265_decoder.close()
         alive.extend(thread.name for thread in self._threads if thread.is_alive())
         if alive:

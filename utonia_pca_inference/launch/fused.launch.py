@@ -20,6 +20,7 @@ def generate_launch_description():
             DeclareLaunchArgument("zdepth_port", default_value="5001"),
             DeclareLaunchArgument("calibration_port", default_value="5002"),
             DeclareLaunchArgument("preview_fps", default_value="0"),
+            DeclareLaunchArgument("gui_fps", default_value="0"),
             Node(
                 package="utonia_pca_inference",
                 executable="rgbd_utonia_node",
@@ -40,6 +41,9 @@ def generate_launch_description():
                         ),
                         "preview_fps": ParameterValue(
                             LaunchConfiguration("preview_fps"), value_type=int
+                        ),
+                        "gui_fps": ParameterValue(
+                            LaunchConfiguration("gui_fps"), value_type=int
                         ),
                     },
                 ],

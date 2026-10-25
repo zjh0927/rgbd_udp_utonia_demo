@@ -25,4 +25,5 @@ rgbd_udp_receiver:
     output_topic: /rgbd/color_points
     output_frame_override: ""
     preview_fps: 0
+    gui_fps: 0
     metrics_interval_ms: 1000
