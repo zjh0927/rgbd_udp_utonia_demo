@@ -10,7 +10,7 @@
 
 旧的 `inference.launch.py` 仍可订阅 `/rgbd/color_points`，用于双进程对照。
 融合启动可加 `gui_fps:=30`，直接在 PC 打开 RGB 与深度图窗口；这一模式需要在
-Conda 环境安装带 GUI 的 `opencv-python`，但不发布 ROS 图像话题。按 `q` 或 Esc
+Conda 环境安装带 GUI 的 `opencv-python`，默认不发布 ROS 图像话题。按 `q` 或 Esc
 退出窗口及融合进程。
 节点运行在 Python 3.10 Conda 环境中。融合模式还需要在该环境安装 PyAV 16.0.1，
 并能导入本工作区编译的 Zdepth 扩展。Utonia 环境使用 PyTorch 2.5.0+cu124、

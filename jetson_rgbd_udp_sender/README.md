@@ -33,8 +33,12 @@ colcon build \
   --cmake-args -DBUILD_TESTING=OFF
 
 source install/setup.bash
-ros2 launch jetson_rgbd_udp_sender sender.launch.py receiver_ip:=192.168.1.107
+ros2 launch jetson_rgbd_udp_sender sender.launch.py
 ```
+
+接收 IP 与端口在 `config/sender.yaml` 中设置；需要使用其他配置文件时，通过
+`config_file:=/绝对路径/sender.yaml` 指定。`sender.launch.py` 不接受
+`receiver_ip` 启动参数。
 
 完整依赖、RealSense 启动方法和 PC 配套步骤见仓库顶层 `README.md`。
 
