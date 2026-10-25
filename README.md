@@ -172,12 +172,14 @@ ros2 launch realsense2_camera rs_launch.py \
 source /opt/ros/humble/setup.bash
 source ~/rgbd_ws/install/setup.bash
 
-ros2 launch jetson_rgbd_udp_sender sender.launch.py \
-  receiver_ip:=192.168.1.107
+ros2 launch jetson_rgbd_udp_sender sender.launch.py
 ```
 
 默认端口是 H.265 `5000`、Zdepth `5001`、标定 `5002`。当前 H.265 目标码率为
-3 Mbps，配置见 `jetson_rgbd_udp_sender/config/sender.yaml`。
+3 Mbps，目标 IP 为 `192.168.1.107`，配置见
+`jetson_rgbd_udp_sender/config/sender.yaml`。如果 Jetson 上的接收 IP 不同，修改
+Jetson 工作区中的 `sender.yaml`，然后启动时用 `config_file` 指向该文件；
+`sender.launch.py` 不接受 `receiver_ip` 参数。
 
 ## 5. PC 接收端依赖与统一编译
 
