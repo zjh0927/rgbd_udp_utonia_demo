@@ -46,7 +46,9 @@ class LocalImageViewer:
                             (time.perf_counter_ns() - started) / 1_000_000.0
                         )
                     next_display = now + self._period
-                key = cv2.waitKey(10) & 0xFF
+                remaining_ms = (next_display - time.monotonic()) * 1000.0
+                wait_ms = min(10, max(1, int(remaining_ms)))
+                key = cv2.waitKey(wait_ms) & 0xFF
                 if key in (27, ord("q")):
                     return
         finally:
