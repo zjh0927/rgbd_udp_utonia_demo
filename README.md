@@ -329,10 +329,11 @@ ros2 launch utonia_pca_inference fused.launch.py \
   calibration_port:=5002
 ```
 
-需要直接在 PC 弹窗查看 RGB 与深度图时，给上述命令加 `gui_fps:=10`。
+需要直接在 PC 弹窗查看 RGB 与深度图时，给上述命令加 `gui_fps:=30`。
 窗口由主线程处理，ROS 回调和推理在后台运行；按 `q` 或 Esc 关闭窗口并停止程序。
 弹窗只读取最新配对帧，不构造中间 ROS 图像消息，日志中的 `gui fps/ms p95`
-记录实际显示帧率和画面转换、提交到窗口的耗时。默认 `gui_fps:=0` 不打开窗口。
+记录实际显示帧率和画面转换、提交到窗口的耗时。`gui_fps` 是显示频率上限，
+实际帧率取决于收到的配对帧和电脑负载；默认 `gui_fps:=0` 不打开窗口。
 
 如需在 RViz2 中查看接收到的图像，也可以给命令加 `preview_fps:=5`。
 默认 `preview_fps:=0` 不发布图像话题，以免影响吞吐量测量。
