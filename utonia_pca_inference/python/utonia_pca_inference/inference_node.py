@@ -4,6 +4,7 @@ import threading
 import time
 from typing import Optional
 
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from builtin_interfaces.msg import Time
@@ -175,6 +176,8 @@ class InferenceNode(Node):
                 if colors is None:
                     self._metrics.increment("calibration_frames")
                     continue
+                if not rclpy.ok():
+                    return
 
                 header = copy.deepcopy(feature_frame.header)
                 if self.config.output_frame_id:
@@ -199,6 +202,8 @@ class InferenceNode(Node):
                 self._metrics.increment("inference_errors")
                 self._log_throttled("inference", f"Dropped inference frame: {exc}")
             except Exception as exc:
+                if not rclpy.ok():
+                    return
                 if self._is_cuda_oom(exc):
                     self._handle_oom(exc)
                     continue

@@ -8,6 +8,10 @@ Utonia 推理，不发布中间 ROS 话题；旧双进程模式仍可发布：
 /rgbd/color_points
 ```
 
+可选 `preview_fps` 参数默认是 0；设置为 5 时，以最多 5 Hz 在 PC 发布
+`/rgbd/color/image_raw`、`/rgbd/depth/image_raw` 和 `/rgbd/depth/preview`，
+分别供查看彩色图、毫米深度数据和灰度深度预览。
+
 构建时使用系统 Python 3.10，不要在 Conda 环境中构建。依赖检查：
 
 ```bash

@@ -24,4 +24,5 @@ rgbd_udp_receiver:
     max_depth_mm: 8190
     output_topic: /rgbd/color_points
     output_frame_override: ""
+    preview_fps: 0
     metrics_interval_ms: 1000

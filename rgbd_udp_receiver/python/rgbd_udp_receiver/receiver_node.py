@@ -4,11 +4,12 @@ from typing import Callable, List, Optional
 
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import Image, PointCloud2
 
 from .calibration import CalibrationError, CalibrationStore
 from .config import ReceiverConfig
 from .h265_decoder import H265DecodeError, H265Decoder
+from .image_preview import depth_preview_lut, make_preview_images
 from .latest_slot import LatestSlot, SlotClosed
 from .metrics import Metrics
 from .models import ColoredPoints, CompleteFrame, DecodedBundle, StreamType
@@ -54,6 +55,7 @@ class ReceiverNode(Node):
         self._depth_slot: LatestSlot[CompleteFrame] = LatestSlot()
         self._bundle_slot: LatestSlot[DecodedBundle] = LatestSlot()
         self._publish_slot: LatestSlot[tuple] = LatestSlot()
+        self._preview_slot: LatestSlot[tuple] = LatestSlot()
         self._discontinuity_lock = threading.Lock()
         self._h265_discontinuity_epoch = 0
         self._state_lock = threading.Lock()
@@ -71,6 +73,19 @@ class ReceiverNode(Node):
         if self._point_callback is None:
             self._publisher = self.create_publisher(PointCloud2, self.config.output_topic, qos)
             self._publish_timer = self.create_timer(0.005, self._publish_latest)
+        self._preview_publishers = None
+        self._preview_timer = None
+        self._depth_preview_lut = None
+        if self.config.preview_fps > 0:
+            self._preview_publishers = (
+                self.create_publisher(Image, "/rgbd/color/image_raw", qos),
+                self.create_publisher(Image, "/rgbd/depth/image_raw", qos),
+                self.create_publisher(Image, "/rgbd/depth/preview", qos),
+            )
+            self._depth_preview_lut = depth_preview_lut(self.config.max_depth_mm)
+            self._preview_timer = self.create_timer(
+                1.0 / self.config.preview_fps, self._publish_preview
+            )
         self._metrics_timer = self.create_timer(
             self.config.metrics_interval_ms / 1000.0, self._report_metrics
         )
@@ -252,6 +267,13 @@ class ReceiverNode(Node):
             if calibration is None:
                 self._metrics.increment("projection_missing_calibration")
                 continue
+            frame_id = self.config.output_frame_override or calibration.color_optical_frame
+            if self._preview_publishers is not None:
+                try:
+                    if self._preview_slot.put((bundle, frame_id)):
+                        self._metrics.increment("preview_overwrites")
+                except SlotClosed:
+                    return
             projection_started = time.perf_counter_ns()
             try:
                 points = project_color_depth(
@@ -274,7 +296,6 @@ class ReceiverNode(Node):
                     "projection", (time.perf_counter_ns() - projection_started) / 1_000_000.0
                 )
             self._metrics.gauge("latest_point_count", points.xyz.shape[0])
-            frame_id = self.config.output_frame_override or calibration.color_optical_frame
             if self._point_callback is not None:
                 try:
                     self._point_callback(
@@ -320,6 +341,27 @@ class ReceiverNode(Node):
         self._metrics.increment("published")
         self._metrics.gauge("latest_output_sequence", sequence)
 
+    def _publish_preview(self) -> None:
+        taken = self._preview_slot.take_nowait()
+        if taken is None:
+            return
+        bundle, frame_id = taken.value
+        started = time.perf_counter_ns()
+        try:
+            images = make_preview_images(
+                bundle, frame_id, self._depth_preview_lut
+            )
+            for publisher, image in zip(self._preview_publishers, images):
+                publisher.publish(image)
+        except Exception as exc:
+            self._metrics.increment("preview_errors")
+            self.get_logger().warning("Image preview failed: %s" % exc)
+            return
+        self._metrics.observe_ms(
+            "preview_publish", (time.perf_counter_ns() - started) / 1_000_000.0
+        )
+        self._metrics.increment("preview_published")
+
     def _report_metrics(self) -> None:
         now_ns = time.monotonic_ns()
         interval = max((now_ns - self._last_metrics_ns) / 1_000_000_000.0, 1e-6)
@@ -336,7 +378,8 @@ class ReceiverNode(Node):
             "fps h265=%.1f depth=%.1f pair=%.1f out=%.1f | seq h/d/p/out=%s/%s/%s/%s | "
             "points=%s | udp dgrams=%s/%s/%s invalid=%d crc=%d timeout=%d | "
             "overwrite h/d/b/p=%d/%d/%d/%d | errors decode_h/depth/direct=%d/%d/%d pair_mismatch=%d | "
-            "ms p95 codec/rgb/depth/xyz/pack=%.1f/%.1f/%.1f/%.1f/%.1f"
+            "ms p95 codec/rgb/depth/xyz/pack=%.1f/%.1f/%.1f/%.1f/%.1f | "
+            "preview fps=%.1f ms p95=%.1f errors=%d"
             % (
                 rate("h265_decoded"),
                 rate("zdepth_decoded"),
@@ -366,6 +409,9 @@ class ReceiverNode(Node):
                 values.get("zdepth_decode_p95_ms", 0.0),
                 values.get("projection_p95_ms", 0.0),
                 values.get("pointcloud_pack_p95_ms", 0.0),
+                rate("preview_published"),
+                values.get("preview_publish_p95_ms", 0.0),
+                values.get("preview_errors", 0),
             )
         )
         self._last_counts = values
@@ -386,6 +432,7 @@ class ReceiverNode(Node):
         if self._threads[2].is_alive():
             self._threads[2].join(timeout=3.0)
         self._publish_slot.close()
+        self._preview_slot.close()
         self._h265_decoder.close()
         alive.extend(thread.name for thread in self._threads if thread.is_alive())
         if alive:
