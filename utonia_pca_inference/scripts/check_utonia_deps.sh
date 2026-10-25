@@ -35,6 +35,7 @@ if actual_env != expected_env:
 
 modules = (
     "numpy",
+    "av",
     "torch",
     "torchvision",
     "rclpy",
@@ -46,6 +47,7 @@ modules = (
     "scipy",
     "addict",
     "utonia",
+    "rgbd_udp_receiver._zdepth",
 )
 for name in modules:
     try:

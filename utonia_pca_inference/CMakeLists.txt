@@ -8,6 +8,7 @@ ament_python_install_package(${PROJECT_NAME} PACKAGE_DIR python/${PROJECT_NAME})
 
 install(PROGRAMS
   scripts/utonia_pca_node
+  scripts/rgbd_utonia_node
   scripts/check_utonia_deps.sh
   DESTINATION lib/${PROJECT_NAME}
 )

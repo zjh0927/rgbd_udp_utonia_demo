@@ -1,6 +1,6 @@
 import threading
 import time
-from typing import List
+from typing import Callable, List, Optional
 
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -11,7 +11,7 @@ from .config import ReceiverConfig
 from .h265_decoder import H265DecodeError, H265Decoder
 from .latest_slot import LatestSlot, SlotClosed
 from .metrics import Metrics
-from .models import CompleteFrame, DecodedBundle, StreamType
+from .models import ColoredPoints, CompleteFrame, DecodedBundle, StreamType
 from .pairing import PairingBuffer
 from .pointcloud2 import make_pointcloud2
 from .projection import ProjectionError, project_color_depth
@@ -20,8 +20,12 @@ from .zdepth_decoder import ZdepthDecodeError, ZdepthDecoder
 
 
 class ReceiverNode(Node):
-    def __init__(self):
+    def __init__(
+        self,
+        point_callback: Optional[Callable[[ColoredPoints, int, str], None]] = None,
+    ):
         super().__init__("rgbd_udp_receiver")
+        self._point_callback = point_callback
         self.config = ReceiverConfig.from_node(self)
         self._metrics = Metrics()
         self._calibrations = CalibrationStore(
@@ -62,8 +66,11 @@ class ReceiverNode(Node):
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
         )
-        self._publisher = self.create_publisher(PointCloud2, self.config.output_topic, qos)
-        self._publish_timer = self.create_timer(0.005, self._publish_latest)
+        self._publisher = None
+        self._publish_timer = None
+        if self._point_callback is None:
+            self._publisher = self.create_publisher(PointCloud2, self.config.output_topic, qos)
+            self._publish_timer = self.create_timer(0.005, self._publish_latest)
         self._metrics_timer = self.create_timer(
             self.config.metrics_interval_ms / 1000.0, self._report_metrics
         )
@@ -104,7 +111,7 @@ class ReceiverNode(Node):
                 self.config.zdepth_port,
                 self.config.calibration_port,
                 self.config.expected_source_id,
-                self.config.output_topic,
+                self.config.output_topic if self._point_callback is None else "direct NumPy input",
             )
         )
 
@@ -193,6 +200,9 @@ class ReceiverNode(Node):
                 self._metrics.observe_ms(
                     "h265_decode", (time.perf_counter_ns() - started) / 1_000_000.0
                 )
+            if decoded:
+                self._metrics.observe_ms("h265_codec", self._h265_decoder.last_codec_ms)
+                self._metrics.observe_ms("h265_rgb", self._h265_decoder.last_rgb_ms)
             for color in decoded:
                 self._metrics.increment("h265_decoded")
                 self._metrics.gauge("latest_h265_sequence", color.bundle_sequence)
@@ -242,7 +252,7 @@ class ReceiverNode(Node):
             if calibration is None:
                 self._metrics.increment("projection_missing_calibration")
                 continue
-            started = time.perf_counter_ns()
+            projection_started = time.perf_counter_ns()
             try:
                 points = project_color_depth(
                     bundle,
@@ -253,10 +263,6 @@ class ReceiverNode(Node):
                 if points.xyz.shape[0] == 0:
                     self._metrics.increment("empty_pointclouds")
                     continue
-                frame_id = self.config.output_frame_override or calibration.color_optical_frame
-                message = make_pointcloud2(
-                    points, bundle.depth.source_timestamp_ns, frame_id
-                )
             except (ProjectionError, ValueError):
                 self._metrics.increment("projection_errors")
                 continue
@@ -265,9 +271,32 @@ class ReceiverNode(Node):
                 continue
             finally:
                 self._metrics.observe_ms(
-                    "projection", (time.perf_counter_ns() - started) / 1_000_000.0
+                    "projection", (time.perf_counter_ns() - projection_started) / 1_000_000.0
                 )
             self._metrics.gauge("latest_point_count", points.xyz.shape[0])
+            frame_id = self.config.output_frame_override or calibration.color_optical_frame
+            if self._point_callback is not None:
+                try:
+                    self._point_callback(
+                        points, bundle.depth.source_timestamp_ns, frame_id
+                    )
+                    self._metrics.increment("direct_submitted")
+                    self._metrics.gauge("latest_output_sequence", bundle.depth.bundle_sequence)
+                except Exception:
+                    self._metrics.increment("direct_submit_errors")
+                continue
+            pack_started = time.perf_counter_ns()
+            try:
+                message = make_pointcloud2(
+                    points, bundle.depth.source_timestamp_ns, frame_id
+                )
+            except (ValueError, TypeError):
+                self._metrics.increment("pointcloud_pack_errors")
+                continue
+            finally:
+                self._metrics.observe_ms(
+                    "pointcloud_pack", (time.perf_counter_ns() - pack_started) / 1_000_000.0
+                )
             try:
                 if self._publish_slot.put((bundle.depth.bundle_sequence, message)):
                     self._metrics.increment("publish_overwrites")
@@ -289,7 +318,7 @@ class ReceiverNode(Node):
             "publish", (time.perf_counter_ns() - started) / 1_000_000.0
         )
         self._metrics.increment("published")
-        self._metrics.gauge("latest_published_sequence", sequence)
+        self._metrics.gauge("latest_output_sequence", sequence)
 
     def _report_metrics(self) -> None:
         now_ns = time.monotonic_ns()
@@ -304,19 +333,19 @@ class ReceiverNode(Node):
             return (current - previous) / interval
 
         self.get_logger().info(
-            "fps h265=%.1f depth=%.1f pair=%.1f pub=%.1f | seq h/d/p/pub=%s/%s/%s/%s | "
+            "fps h265=%.1f depth=%.1f pair=%.1f out=%.1f | seq h/d/p/out=%s/%s/%s/%s | "
             "points=%s | udp dgrams=%s/%s/%s invalid=%d crc=%d timeout=%d | "
-            "overwrite h/d/b/p=%d/%d/%d/%d | errors decode_h/depth=%d/%d pair_mismatch=%d | "
-            "ms h265/depth/proj p95=%.1f/%.1f/%.1f"
+            "overwrite h/d/b/p=%d/%d/%d/%d | errors decode_h/depth/direct=%d/%d/%d pair_mismatch=%d | "
+            "ms p95 codec/rgb/depth/xyz/pack=%.1f/%.1f/%.1f/%.1f/%.1f"
             % (
                 rate("h265_decoded"),
                 rate("zdepth_decoded"),
                 rate("paired"),
-                rate("published"),
+                rate("direct_submitted" if self._point_callback is not None else "published"),
                 values.get("latest_h265_sequence", "-"),
                 values.get("latest_zdepth_sequence", "-"),
                 values.get("latest_paired_sequence", "-"),
-                values.get("latest_published_sequence", "-"),
+                values.get("latest_output_sequence", "-"),
                 values.get("latest_point_count", 0),
                 udp.get("h265_datagrams", 0),
                 udp.get("zdepth_datagrams", 0),
@@ -330,10 +359,13 @@ class ReceiverNode(Node):
                 values.get("publish_overwrites", 0),
                 values.get("h265_decode_errors", 0),
                 values.get("zdepth_decode_errors", 0),
+                values.get("direct_submit_errors", 0),
                 pairing.get("metadata_mismatch", 0),
-                values.get("h265_decode_p95_ms", 0.0),
+                values.get("h265_codec_p95_ms", 0.0),
+                values.get("h265_rgb_p95_ms", 0.0),
                 values.get("zdepth_decode_p95_ms", 0.0),
                 values.get("projection_p95_ms", 0.0),
+                values.get("pointcloud_pack_p95_ms", 0.0),
             )
         )
         self._last_counts = values

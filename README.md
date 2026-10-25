@@ -5,14 +5,14 @@
 RTX 4060 的电脑。电脑端解码并重建彩色点云，再用 Utonia Tiny 提取逐点特征，
 通过固定 PCA 映射为伪语义颜色并发布给 RViz2。
 
-跨机器链路不使用 ROS 2 DDS；ROS 2 只用于两台机器各自的本地进程通信。
+跨机器链路不使用 ROS 2 DDS；PC 端解码、点云重建和推理在同一进程中传递
+NumPy 数组，仅将最终 PCA 点云发布为 ROS 2 话题。
 
 ```text
 D435i ROS 2
   -> RGB/H.265 + Depth/Zdepth + CameraInfo
   -> UDP 5000/5001/5002
-  -> PC 解码与 XYZRGB 重建
-  -> /rgbd/color_points
+  -> PC 解码与 XYZRGB 重建（进程内 NumPy 数组，最多 20000 点）
   -> Utonia Tiny + 固定 PCA
   -> /utonia/pca_points
   -> RViz2
@@ -25,8 +25,8 @@ D435i ROS 2
 
 ```text
 jetson_rgbd_udp_sender/  Jetson C++ 采集、H.265/Zdepth 压缩和 UDP 发送
-rgbd_udp_receiver/      PC UDP 重组、解码、点云重建和 ROS 2 发布
-utonia_pca_inference/   PC Utonia Tiny 推理、固定 PCA 和 ROS 2 发布
+rgbd_udp_receiver/      PC UDP 重组、解码和点云重建
+utonia_pca_inference/   PC 单进程入口、Utonia Tiny、固定 PCA 和 ROS 2 发布
 docs/                   系统设计
 ```
 
@@ -210,7 +210,8 @@ sudo apt install -y \
   ros-humble-launch-ros
 ```
 
-接收端使用系统 Python 运行，单独为 `/usr/bin/python3` 安装 PyAV：
+旧双进程模式需要接收端在系统 Python 中运行，可单独为 `/usr/bin/python3`
+安装 PyAV；融合模式则只需在 `utonia` Conda 环境中安装 PyAV：
 
 ```bash
 /usr/bin/python3 -m pip install --user av==16.0.1
@@ -264,7 +265,7 @@ python -m pip install \
   --index-url https://download.pytorch.org/whl/cu124
 
 python -m pip install \
-  numpy==1.26.4 spconv-cu124 timm huggingface_hub scipy addict
+  numpy==1.26.4 av==16.0.1 spconv-cu124 timm huggingface_hub scipy addict
 
 python -m pip install --no-index torch-scatter \
   -f https://data.pyg.org/whl/torch-2.5.0+cu124.html
@@ -299,42 +300,33 @@ bash utonia_pca_inference/scripts/check_utonia_deps.sh
 
 ## 7. PC 端运行
 
-三个进程使用的环境如下。具体环境激活方式取决于本机的 ROS 2 和 Conda 安装，
-不需要照搬某台开发电脑的环境变量设置。每个终端启动前还需加载本工作区的
-`install/setup.bash`。
+PC 上使用一个融合进程完成 UDP 接收、解码、点云重建、Utonia 推理和 PCA 发布。
+该进程使用 `utonia` Conda 环境，且必须能够导入 ROS 2 Humble 的 Python 包、
+PyAV 和本项目编译的 `rgbd_udp_receiver._zdepth` 扩展。启动前加载 ROS 2 和
+本工作区的 `install/setup.bash`；RViz2 在 ROS 2 Humble 环境中运行。
 
 | 进程 | 使用环境 |
 |---|---|
-| `rgbd_udp_receiver` | ROS 2 Humble 系统 Python 环境 |
-| `utonia_pca_inference` | 安装了 PyTorch 和 Utonia 依赖的 `utonia` Conda 环境，同时可访问 ROS 2 |
+| `rgbd_utonia_node` | 安装了 PyAV、PyTorch 和 Utonia 依赖的 `utonia` Conda 环境，同时可访问 ROS 2 和 Zdepth 扩展 |
 | RViz2 | ROS 2 Humble 环境 |
 
-### 终端 A：UDP 接收和点云重建
+### 终端 A：接收、解码和推理
 
 ```bash
-ros2 launch rgbd_udp_receiver receiver.launch.py \
+ros2 launch utonia_pca_inference fused.launch.py \
   bind_address:=0.0.0.0 \
   h265_port:=5000 \
   zdepth_port:=5001 \
   calibration_port:=5002
 ```
 
-确认普通彩色点云：
-
-```bash
-ros2 topic hz /rgbd/color_points
-```
-
-### 终端 B：Utonia Tiny 和固定 PCA
-
-```bash
-ros2 launch utonia_pca_inference inference.launch.py
-```
-
 第一次运行会收集 20 个成功推理帧拟合固定 PCA，然后保存 profile。后续启动会
 复用该 profile；模型哈希、特征维度或关键参数不匹配时会重新校准。
+融合模式不会发布 `/rgbd/color_points`。旧的 `receiver.launch.py` 与
+`inference.launch.py` 仍可分别启动，用于对照原双进程流程；不要同时运行两套
+接收端，否则 UDP 端口会冲突。
 
-### 终端 C：RViz2
+### 终端 B：RViz2
 
 ```bash
 rviz2
@@ -354,9 +346,10 @@ PCA 颜色表示预训练特征空间，不是带类别名称的语义分割结�
 ## 8. 已完成的实机验证
 
 实机环境为 Jetson Orin NX 16 GB、D435i、无线 Mesh 网络和 RTX 4060 Laptop。
-输入为 `640x480@30`，H.265 目标码率为 3 Mbps；接收端最多重建 50000 点，
-Utonia Tiny 最多输入 20000 点。接收端与推理端数据来自不同采样窗口，结果用于
-展示系统运行情况，不作为严格同步的端到端基准测试。
+下面的数据来自优化前的双进程实机记录。输入为 `640x480@30`，H.265 目标码率为
+3 Mbps；旧接收端最多重建 50000 点，Utonia Tiny 最多输入 20000 点。接收端与
+推理端数据来自不同采样窗口，结果用于展示旧版运行情况，不作为严格同步的端到端
+基准测试。融合模式默认最多重建 20000 点，尚需重新实测。
 表中的 FPS 表示各环节每秒处理或发布的帧数（吞吐量），不表示单帧耗时或端到端延迟。
 
 | 环节 | 实测结果 |
@@ -377,7 +370,8 @@ Utonia Tiny 最多输入 20000 点。接收端与推理端数据来自不同采�
 ### 可改进方向
 
 - 使用有线网络进行对照测试，并进一步优化 UDP 缓冲、超时和丢包恢复策略。
-- 将点云重建数量统一为 20000 点，减少投影、PointCloud2 构造和 ROS 进程间传输开销。
+- 融合模式已把重建数量统一为 20000 点，并取消中间 PointCloud2 消息；需要重新
+  测量其稳定帧率和本机处理延迟。
 - 尝试 NVDEC 硬件解码、混合精度推理和 FlashAttention，进一步提高处理帧率。
 
 ## 9. 上传 Git 前检查

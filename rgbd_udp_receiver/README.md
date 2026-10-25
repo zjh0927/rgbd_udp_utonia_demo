@@ -1,13 +1,14 @@
 # PC RGB-D UDP 接收端
 
 ROS 2 Humble 包，完成三路 UDP 重组、CRC32 校验、PyAV/FFmpeg H.265 解码、
-Zdepth 原生解码、RGB-D 配对和 XYZRGB 点云重建，发布：
+Zdepth 原生解码、RGB-D 配对和 XYZRGB 点云重建。融合模式把 NumPy 数组直接交给
+Utonia 推理，不发布中间 ROS 话题；旧双进程模式仍可发布：
 
 ```text
 /rgbd/color_points
 ```
 
-接收端使用系统 Python 3.10，不要在 Conda 环境中构建。依赖检查：
+构建时使用系统 Python 3.10，不要在 Conda 环境中构建。依赖检查：
 
 ```bash
 conda deactivate 2>/dev/null || true

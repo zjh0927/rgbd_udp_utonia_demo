@@ -18,7 +18,7 @@ rgbd_udp_receiver:
     max_pair_slots: 64
     max_h265_pending_metadata: 32
     max_calibration_generations: 4
-    max_output_points: 50000
+    max_output_points: 20000
     expected_width: 640
     expected_height: 480
     max_depth_mm: 8190

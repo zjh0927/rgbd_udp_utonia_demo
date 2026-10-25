@@ -6,7 +6,9 @@ from typing import Optional
 
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from builtin_interfaces.msg import Time
 from sensor_msgs.msg import PointCloud2
+from std_msgs.msg import Header
 
 from .cloud_io import CloudFormatError, CloudFrame, decode_xyzrgb, make_xyzrgb
 from .config import InferenceConfig
@@ -17,8 +19,9 @@ from .utonia_backend import BackendError, CudaOutOfMemory, UtoniaBackend
 
 
 class InferenceNode(Node):
-    def __init__(self):
+    def __init__(self, direct_input: bool = False):
         super().__init__("utonia_pca_inference")
+        self._direct_input = direct_input
         self.config = InferenceConfig.from_node(self)
         self._validate_paths()
         self._slot: LatestSlot[CloudFrame] = LatestSlot()
@@ -40,12 +43,13 @@ class InferenceNode(Node):
         self._publisher = self.create_publisher(
             PointCloud2, self.config.output_topic, qos_profile_sensor_data
         )
-        self._subscription = self.create_subscription(
-            PointCloud2,
-            self.config.input_topic,
-            self._on_cloud,
-            qos_profile_sensor_data,
-        )
+        if not self._direct_input:
+            self._subscription = self.create_subscription(
+                PointCloud2,
+                self.config.input_topic,
+                self._on_cloud,
+                qos_profile_sensor_data,
+            )
         self._metrics_timer = self.create_timer(
             self.config.metrics_interval_ms / 1000.0, self._report_metrics
         )
@@ -99,7 +103,8 @@ class InferenceNode(Node):
         self._worker.start()
         self._started = True
         self.get_logger().info(
-            f"Utonia inference ready: {self.config.input_topic} -> "
+            f"Utonia inference ready: "
+            f"{'direct NumPy input' if self._direct_input else self.config.input_topic} -> "
             f"{self.config.output_topic}, max_points={self.config.max_model_points}, "
             f"feature_dim={feature_dim}, model_sha256={identity.model_sha256[:12]}..."
         )
@@ -108,18 +113,35 @@ class InferenceNode(Node):
         started = time.perf_counter()
         try:
             frame = decode_xyzrgb(message)
-            overwritten = self._slot.put(frame)
         except (CloudFormatError, ValueError) as exc:
             self._metrics.increment("input_errors")
             self._log_throttled("input", f"Rejected input PointCloud2: {exc}")
             return
+        self._enqueue_frame(frame)
+        self._metrics.observe_ms("decode", (time.perf_counter() - started) * 1000.0)
+
+    def submit_points(self, points, timestamp_ns: int, frame_id: str) -> None:
+        """Pass projected NumPy arrays directly from the receiver worker."""
+        stamp = Time(
+            sec=int(timestamp_ns // 1_000_000_000),
+            nanosec=int(timestamp_ns % 1_000_000_000),
+        )
+        frame = CloudFrame(
+            xyz=points.xyz,
+            rgb=points.rgb,
+            header=Header(stamp=stamp, frame_id=frame_id),
+        )
+        self._enqueue_frame(frame)
+
+    def _enqueue_frame(self, frame: CloudFrame) -> None:
+        try:
+            overwritten = self._slot.put(frame)
         except SlotClosed:
             return
         self._metrics.increment("input_frames")
         self._metrics.gauge("input_points", frame.count)
         if overwritten:
             self._metrics.increment("slot_overwrites")
-        self._metrics.observe_ms("decode", (time.perf_counter() - started) * 1000.0)
 
     def _inference_loop(self) -> None:
         assert self._backend is not None

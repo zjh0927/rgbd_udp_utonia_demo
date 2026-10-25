@@ -1,5 +1,6 @@
 from collections import deque
 from dataclasses import dataclass
+import time
 from typing import Deque, List, Optional
 
 import av
@@ -29,6 +30,8 @@ class H265Decoder:
         self._codec = None
         self._pending: Deque[_Metadata] = deque()
         self._waiting_for_keyframe = True
+        self.last_codec_ms = 0.0
+        self.last_rgb_ms = 0.0
 
     @property
     def waiting_for_keyframe(self) -> bool:
@@ -46,6 +49,8 @@ class H265Decoder:
         self.reset_for_discontinuity()
 
     def decode(self, frame: CompleteFrame) -> List[DecodedColorFrame]:
+        self.last_codec_ms = 0.0
+        self.last_rgb_ms = 0.0
         if frame.stream_type != StreamType.H265:
             raise H265DecodeError("received a non-H.265 frame")
         keyframe = bool(frame.flags & FLAG_KEYFRAME)
@@ -67,7 +72,9 @@ class H265Decoder:
             raise H265DecodeError("H.265 decoder metadata queue exceeded its hard limit")
 
         try:
+            codec_started = time.perf_counter_ns()
             decoded = self._codec.decode(av.Packet(frame.payload))
+            self.last_codec_ms = (time.perf_counter_ns() - codec_started) / 1_000_000.0
         except FFmpegError as exc:
             self.reset_for_discontinuity()
             raise H265DecodeError(f"FFmpeg HEVC decode failed: {exc}") from exc
@@ -93,7 +100,9 @@ class H265Decoder:
                     f"unexpected decoded dimensions {image.width}x{image.height}; "
                     f"expected {self._width}x{self._height}"
                 )
+            rgb_started = time.perf_counter_ns()
             pixels = np.ascontiguousarray(image.to_ndarray(format="rgb24"))
+            self.last_rgb_ms += (time.perf_counter_ns() - rgb_started) / 1_000_000.0
             output.append(
                 DecodedColorFrame(
                     source_id=matched.source_id,
